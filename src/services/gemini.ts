@@ -14,37 +14,30 @@ export class GeminiService {
   ): Promise<{ files: FileItem[]; summary: string }> {
     onStatusUpdate("Analyzing current project structure...");
     
-    // تمام فائلوں کا ڈیٹا اکٹھا کرنا تاکہ AI کو پتا ہو کہ پہلے کیا بنا ہوا ہے
     const fileContext = currentFiles.map(f => `File: ${f.name}\nLanguage: ${f.language}\nContent:\n${f.content}`).join("\n\n---\n\n");
     
     const systemInstruction = `
       You are "The Mistri", a Senior IDE Architect and AI Coding Assistant.
-      
       Current Project Files:
       ${fileContext}
-      
       User Request: "${prompt}"
-      
       Instructions:
-      1. Analyze the existing files and the request.
-      2. Provide the UPDATED or NEW files in a JSON format.
-      3. Provide a clear summary of what you did.
-      4. Always use correct file paths.
-      5. THE RESPONSE MUST BE A VALID JSON OBJECT with two fields: 
-         - "updatedFiles": an array of { name: string, content: string, language: string, path: string }
-         - "summary": a detailed breakdown of changes.
-      
-      Respond ONLY with the JSON object. Do not include markdown code block syntax around the JSON data.
+      1. Provide updated or new files in a valid JSON format.
+      2. Keep the summary clear.
+      3. THE RESPONSE MUST BE A VALID JSON OBJECT:
+         {
+           "updatedFiles": [{ "name": string, "content": string, "language": string, "path": string }],
+           "summary": string
+         }
+      Respond ONLY with the JSON.
     `;
 
     try {
       let responseText = "";
-
-      // Gemini 1.5 Pro استعمال کر رہے ہیں جو کہ 3.1 Pro کے برابر ہے
       const targetModel = "gemini-1.5-pro";
 
       if (this.settings.source === 'studio') {
-        onStatusUpdate(`Connecting to Google Cloud API (${targetModel})...`);
+        onStatusUpdate(`Connecting via Cloud API (${targetModel})...`);
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${this.settings.geminiKey}`;
         
         const response = await fetch(url, {
@@ -52,10 +45,7 @@ export class GeminiService {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             contents: [{ role: "user", parts: [{ text: systemInstruction }] }],
-            generationConfig: { 
-              responseMimeType: "application/json",
-              temperature: 0.7 
-            }
+            generationConfig: { responseMimeType: "application/json", temperature: 0.7 }
           })
         });
 
@@ -94,15 +84,22 @@ export class GeminiService {
 
       onStatusUpdate("Applying changes to project...");
       
-      // جواب سے فالتو مارک ڈاؤن صاف کرنا
       let cleanedText = responseText.trim();
-      const match = cleanedText.match(/```(?:json)?\s*([\s\S]*?)\s*
-```/i);
+      
+      // یہاں تبدیلی کی گئی ہے: اب یہ لائن ٹوٹنے سے ایرر نہیں دے گا
+      const jsonRegex = new RegExp("```(?:json)?\\s*([\\s\\S]*?)\\s*
+```", "i");
+      const match = cleanedText.match(jsonRegex);
       
       if (match) {
         cleanedText = match[1].trim();
       } else {
-        cleanedText = cleanedText.replace(/^```json/i, '').replace(/^```/i, '').replace(/```$/i, '').trim();
+        cleanedText = cleanedText
+          .replace(/^```json/i, "")
+          .replace(/^
+```/i, "")
+          .replace(/```$/i, "")
+          .trim();
       }
 
       let result;
@@ -123,7 +120,7 @@ export class GeminiService {
 
       return {
         files: updatedFiles,
-        summary: result.summary || "Code generation completed."
+        summary: result.summary || "Code updated successfully."
       };
 
     } catch (error: any) {
@@ -132,5 +129,5 @@ export class GeminiService {
       throw error;
     }
   }
-                           }
-    
+          }
+        
