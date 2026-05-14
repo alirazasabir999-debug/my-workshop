@@ -17,19 +17,10 @@ export class GeminiService {
     const fileContext = currentFiles.map(f => `File: ${f.name}\nLanguage: ${f.language}\nContent:\n${f.content}`).join("\n\n---\n\n");
     
     const systemInstruction = `
-      You are "The Mistri", a Senior IDE Architect and AI Coding Assistant.
-      Current Project Files:
-      ${fileContext}
+      You are "The Mistri", a Senior IDE Architect.
+      Current Files: ${fileContext}
       User Request: "${prompt}"
-      Instructions:
-      1. Provide updated or new files in a valid JSON format.
-      2. Keep the summary clear.
-      3. THE RESPONSE MUST BE A VALID JSON OBJECT:
-         {
-           "updatedFiles": [{ "name": string, "content": string, "language": string, "path": string }],
-           "summary": string
-         }
-      Respond ONLY with the JSON.
+      Return ONLY a JSON object: { "updatedFiles": [...], "summary": "" }
     `;
 
     try {
@@ -37,7 +28,7 @@ export class GeminiService {
       const targetModel = "gemini-1.5-pro";
 
       if (this.settings.source === 'studio') {
-        onStatusUpdate(`Connecting via Cloud API (${targetModel})...`);
+        onStatusUpdate(`Connecting via Cloud API...`);
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${this.settings.geminiKey}`;
         
         const response = await fetch(url, {
@@ -58,7 +49,7 @@ export class GeminiService {
         responseText = data.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
 
       } else {
-        onStatusUpdate(`Connecting to Vertex AI (${targetModel})...`);
+        onStatusUpdate(`Connecting via Vertex AI...`);
         const url = `https://${this.settings.vertexLocation}-aiplatform.googleapis.com/v1/projects/${this.settings.vertexProject}/locations/${this.settings.vertexLocation}/publishers/google/models/${targetModel}:generateContent`;
         
         const response = await fetch(url, {
@@ -82,32 +73,24 @@ export class GeminiService {
         responseText = data.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
       }
 
-      onStatusUpdate("Applying changes to project...");
+      onStatusUpdate("Extracting JSON data...");
       
       let cleanedText = responseText.trim();
       
-      // یہاں تبدیلی کی گئی ہے: اب یہ لائن ٹوٹنے سے ایرر نہیں دے گا
-      const jsonRegex = new RegExp("```(?:json)?\\s*([\\s\\S]*?)\\s*
-```", "i");
-      const match = cleanedText.match(jsonRegex);
+      // موبائل سیف طریقہ: ریجیکس کے بغیر ڈیٹا نکالنا
+      const firstBrace = cleanedText.indexOf('{');
+      const lastBrace = cleanedText.lastIndexOf('}');
       
-      if (match) {
-        cleanedText = match[1].trim();
-      } else {
-        cleanedText = cleanedText
-          .replace(/^```json/i, "")
-          .replace(/^
-```/i, "")
-          .replace(/```$/i, "")
-          .trim();
+      if (firstBrace !== -1 && lastBrace !== -1) {
+        cleanedText = cleanedText.substring(firstBrace, lastBrace + 1);
       }
 
       let result;
       try {
         result = JSON.parse(cleanedText);
       } catch (parseError) {
-        console.error("Mistri Engine parse error:", parseError);
-        throw new Error("Failed to parse AI response as JSON.");
+        console.error("Parse error:", parseError);
+        throw new Error("AI response was not valid JSON.");
       }
       
       const updatedFiles: FileItem[] = (result.updatedFiles || []).map((f: any) => ({
@@ -120,14 +103,13 @@ export class GeminiService {
 
       return {
         files: updatedFiles,
-        summary: result.summary || "Code updated successfully."
+        summary: result.summary || "Done!"
       };
 
     } catch (error: any) {
-      console.error("Mistri Engine Error:", error);
+      console.error("Mistri Error:", error);
       onStatusUpdate(`Error: ${error.message}`);
       throw error;
     }
   }
-          }
-        
+        }
