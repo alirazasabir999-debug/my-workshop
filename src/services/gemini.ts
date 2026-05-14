@@ -16,11 +16,26 @@ export class GeminiService {
     
     const fileContext = currentFiles.map(f => `File: ${f.name}\nLanguage: ${f.language}\nContent:\n${f.content}`).join("\n\n---\n\n");
     
+    // اے آئی کے لیے سخت ہدایات تاکہ وہ صرف JSON بھیجے
     const systemInstruction = `
-      You are "The Mistri", a Senior IDE Architect.
-      Current Files: ${fileContext}
-      User Request: "${prompt}"
-      Return ONLY a JSON object: { "updatedFiles": [...], "summary": "" }
+      You are "The Mistri", an expert Senior IDE Architect.
+      You MUST return ONLY a valid JSON object. Do not include markdown formatting like \`\`\`json or any conversational text.
+      
+      Current Project Files: ${fileContext}
+      User Task: "${prompt}"
+      
+      EXPECTED JSON STRUCTURE:
+      {
+        "updatedFiles": [
+          {
+            "name": "filename.js",
+            "content": "source code here",
+            "language": "javascript",
+            "path": "path/if/needed"
+          }
+        ],
+        "summary": "Brief technical summary in Urdu."
+      }
     `;
 
     try {
@@ -33,7 +48,13 @@ export class GeminiService {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          prompt: systemInstruction
+          prompt: systemInstruction,
+          // 2026 کا لیٹسٹ ماڈل کنفیگریشن
+          model: "gemini-3.1-pro-latest",
+          generationConfig: {
+            responseMimeType: "application/json", // JSON موڈ کو فورس کرنا
+            temperature: 1.0 // ریپلیکیشن اور لاجک کے لیے بہترین ویلیو
+          }
         })
       });
 
@@ -43,7 +64,7 @@ export class GeminiService {
 
       const data = await response.json();
       
-      // رسپانس نکالنا
+      // گوگل کلاؤڈ API سے رسپانس نکالنا
       const responseText = data.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
 
       onStatusUpdate("ڈیٹا ایکسٹریکٹ کیا جا رہا ہے...");
@@ -58,6 +79,7 @@ export class GeminiService {
 
       const result = JSON.parse(cleanedText);
       
+      // فائلوں کو پروجیکٹ کے فارمیٹ میں ڈھالنا
       const updatedFiles: FileItem[] = (result.updatedFiles || []).map((f: any) => ({
         id: Math.random().toString(36).substr(2, 9),
         name: f.name,
@@ -77,4 +99,4 @@ export class GeminiService {
       throw error;
     }
   }
-  }
+}
