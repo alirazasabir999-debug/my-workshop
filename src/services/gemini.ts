@@ -1,4 +1,3 @@
-import { GoogleGenAI } from "@google/genai";
 import { FileItem, MistriSettings } from "../types";
 
 export class GeminiService {
@@ -27,29 +26,26 @@ export class GeminiService {
       User Request: "${prompt}"
       
       Instructions:
-      1. Provide updated or new files in a valid JSON format.
-      2. Keep the summary clear and technical.
-      3. Use correct file paths.
-      4. THE RESPONSE MUST BE A VALID JSON OBJECT:
-         {
-           "updatedFiles": [{ "name": string, "content": string, "language": string, "path": string }],
-           "summary": string
-         }
-      Respond ONLY with the JSON. No markdown code blocks.
+      1. Analyze the existing files and the request.
+      2. Provide the UPDATED or NEW files in a JSON format.
+      3. Provide a clear summary of what you did.
+      4. Always use correct file paths.
+      5. THE RESPONSE MUST BE A VALID JSON OBJECT with two fields: 
+         - "updatedFiles": an array of { name: string, content: string, language: string, path: string }
+         - "summary": a detailed breakdown of changes.
+      
+      Respond ONLY with the JSON object. Do not include markdown code block syntax around the JSON data.
     `;
 
     try {
       let responseText = "";
 
-      // --- AI STUDIO / GOOGLE CLOUD API KEY LOGIC ---
+      // Gemini 1.5 Pro استعمال کر رہے ہیں جو کہ 3.1 Pro کے برابر ہے
+      const targetModel = "gemini-1.5-pro";
+
       if (this.settings.source === 'studio') {
-        // یہاں ہم Gemini 1.5 Pro استعمال کریں گے جو درحقیقت 3.1 Pro کے فیچرز رکھتا ہے
-        const finalModel = "gemini-1.5-pro"; 
-        
-        onStatusUpdate(`Connecting via Cloud API (${finalModel})...`);
-        
-        // کلاؤڈ والی API Key کے لیے v1beta اینڈ پوائنٹ سب سے بہترین ہے
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${finalModel}:generateContent?key=${this.settings.geminiKey}`;
+        onStatusUpdate(`Connecting to Google Cloud API (${targetModel})...`);
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${this.settings.geminiKey}`;
         
         const response = await fetch(url, {
           method: "POST",
@@ -65,18 +61,15 @@ export class GeminiService {
 
         if (!response.ok) {
            const err = await response.json();
-           throw new Error(err.error?.message || "Google Cloud API Error");
+           throw new Error(err.error?.message || "Cloud API Error");
         }
 
         const data = await response.json();
         responseText = data.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
 
       } else {
-        // --- VERTEX AI / OAUTH LOGIC ---
-        const finalModel = "gemini-1.5-pro"; 
-        onStatusUpdate(`Connecting to Vertex AI (${finalModel})...`);
-        
-        const url = `https://${this.settings.vertexLocation}-aiplatform.googleapis.com/v1/projects/${this.settings.vertexProject}/locations/${this.settings.vertexLocation}/publishers/google/models/${finalModel}:generateContent`;
+        onStatusUpdate(`Connecting to Vertex AI (${targetModel})...`);
+        const url = `https://${this.settings.vertexLocation}-aiplatform.googleapis.com/v1/projects/${this.settings.vertexProject}/locations/${this.settings.vertexLocation}/publishers/google/models/${targetModel}:generateContent`;
         
         const response = await fetch(url, {
           method: "POST",
@@ -101,18 +94,24 @@ export class GeminiService {
 
       onStatusUpdate("Applying changes to project...");
       
-      // جواب سے فالتو چیزیں صاف کرنا (Cleaning Logic)
+      // جواب سے فالتو مارک ڈاؤن صاف کرنا
       let cleanedText = responseText.trim();
       const match = cleanedText.match(/```(?:json)?\s*([\s\S]*?)\s*
 ```/i);
+      
       if (match) {
         cleanedText = match[1].trim();
       } else {
         cleanedText = cleanedText.replace(/^```json/i, '').replace(/^```/i, '').replace(/```$/i, '').trim();
       }
 
-      // JSON پارس کرنا اور فائلوں کو سسٹم کے مطابق ڈھالنا
-      let result = JSON.parse(cleanedText);
+      let result;
+      try {
+        result = JSON.parse(cleanedText);
+      } catch (parseError) {
+        console.error("Mistri Engine parse error:", parseError);
+        throw new Error("Failed to parse AI response as JSON.");
+      }
       
       const updatedFiles: FileItem[] = (result.updatedFiles || []).map((f: any) => ({
         id: Math.random().toString(36).substr(2, 9),
@@ -124,7 +123,7 @@ export class GeminiService {
 
       return {
         files: updatedFiles,
-        summary: result.summary || "Code updated successfully."
+        summary: result.summary || "Code generation completed."
       };
 
     } catch (error: any) {
@@ -133,4 +132,5 @@ export class GeminiService {
       throw error;
     }
   }
-  }
+                           }
+    
