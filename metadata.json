@@ -1,0 +1,6 @@
+{
+  "name": "Mistri AI Workshop",
+  "description": "A mobile-first web-based IDE powered by Gemini 3.1 Pro, featuring real-time AI code generation, GitHub integration, and live preview.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
