@@ -12,7 +12,7 @@ export class GeminiService {
     currentFiles: FileItem[],
     onStatusUpdate: (status: string) => void
   ): Promise<{ files: FileItem[]; summary: string }> {
-    onStatusUpdate("Analyzing current project structure...");
+    onStatusUpdate("پراجیکٹ کا سٹرکچر انالائز کیا جا رہا ہے...");
     
     const fileContext = currentFiles.map(f => `File: ${f.name}\nLanguage: ${f.language}\nContent:\n${f.content}`).join("\n\n---\n\n");
     
@@ -25,59 +25,44 @@ export class GeminiService {
 
     try {
       let responseText = "";
-      const targetModel = "gemini-1.5-pro";
+      // 2026 کا لیٹسٹ ماڈل جو آپ کے ورکر میں ہینڈل ہوگا
+      const targetModel = "gemini-3.1-pro-latest"; 
 
-      if (this.settings.source === 'studio') {
-        onStatusUpdate(`Connecting via Cloud API...`);
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${this.settings.geminiKey}`;
-        
-        const response = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [{ role: "user", parts: [{ text: systemInstruction }] }],
-            generationConfig: { responseMimeType: "application/json", temperature: 0.7 }
-          })
-        });
+      onStatusUpdate(`کلاؤڈ فلیر ورکر کے ذریعے Gemini 3.1 Pro سے رابطہ ہو رہا ہے...`);
 
-        if (!response.ok) {
-           const err = await response.json();
-           throw new Error(err.error?.message || "Cloud API Error");
-        }
+      // یہاں آپ نے اپنے Cloudflare Worker کا URL ڈالنا ہے
+      // مثال کے طور پر: https://mistri-backend.your-subdomain.workers.dev/
+      const workerUrl = "https://your-worker-url.workers.dev/"; 
 
-        const data = await response.json();
-        responseText = data.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+      const response = await fetch(workerUrl, {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json"
+          // اگر آپ نے ورکر پر کوئی سیکیورٹی ٹوکن رکھا ہے تو وہ یہاں آئے گا
+        },
+        body: JSON.stringify({
+          model: targetModel,
+          prompt: systemInstruction,
+          // اگر آپ ورکر میں ڈائریکٹ میسجز بھیجنا چاہتے ہیں
+          contents: [{ role: "user", parts: [{ text: systemInstruction }] }]
+        })
+      });
 
-      } else {
-        onStatusUpdate(`Connecting via Vertex AI...`);
-        const url = `https://${this.settings.vertexLocation}-aiplatform.googleapis.com/v1/projects/${this.settings.vertexProject}/locations/${this.settings.vertexLocation}/publishers/google/models/${targetModel}:generateContent`;
-        
-        const response = await fetch(url, {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${this.settings.vertexToken}`,
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            contents: [{ role: "user", parts: [{ text: systemInstruction }] }],
-            generationConfig: { responseMimeType: "application/json" }
-          })
-        });
-
-        if (!response.ok) {
-           const err = await response.json();
-           throw new Error(err.error?.message || "Vertex AI API Error");
-        }
-
-        const data = await response.json();
-        responseText = data.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+      if (!response.ok) {
+         const err = await response.json();
+         throw new Error(err.error || "ورکر کنکشن میں مسئلہ ہے");
       }
 
-      onStatusUpdate("Extracting JSON data...");
+      const data = await response.json();
+      
+      // ورکر سے آنے والا رسپانس نکالنا
+      responseText = data.candidates?.[0]?.content?.parts?.[0]?.text || data.text || "{}";
+
+      onStatusUpdate("ڈیٹا ایکسٹریکٹ کیا جا رہا ہے...");
       
       let cleanedText = responseText.trim();
       
-      // موبائل سیف طریقہ: ریجیکس کے بغیر ڈیٹا نکالنا
+      // بریکٹس کے درمیان سے JSON نکالنے کا محفوظ طریقہ
       const firstBrace = cleanedText.indexOf('{');
       const lastBrace = cleanedText.lastIndexOf('}');
       
@@ -90,7 +75,7 @@ export class GeminiService {
         result = JSON.parse(cleanedText);
       } catch (parseError) {
         console.error("Parse error:", parseError);
-        throw new Error("AI response was not valid JSON.");
+        throw new Error("AI کا جواب درست JSON فارمیٹ میں نہیں تھا۔");
       }
       
       const updatedFiles: FileItem[] = (result.updatedFiles || []).map((f: any) => ({
@@ -103,13 +88,13 @@ export class GeminiService {
 
       return {
         files: updatedFiles,
-        summary: result.summary || "Done!"
+        summary: result.summary || "کام مکمل ہو گیا!"
       };
 
     } catch (error: any) {
       console.error("Mistri Error:", error);
-      onStatusUpdate(`Error: ${error.message}`);
+      onStatusUpdate(`خرابی: ${error.message}`);
       throw error;
     }
   }
-        }
+}
