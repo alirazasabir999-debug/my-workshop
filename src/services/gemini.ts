@@ -15,11 +15,11 @@ export class GeminiService {
   ): Promise<{ files: FileItem[]; summary: string }> {
     onStatusUpdate("Analyzing current project structure...");
     
+    // تمام فائلوں کا ڈیٹا اکٹھا کرنا تاکہ AI کو پتا ہو کہ پہلے کیا بنا ہوا ہے
     const fileContext = currentFiles.map(f => `File: ${f.name}\nLanguage: ${f.language}\nContent:\n${f.content}`).join("\n\n---\n\n");
     
     const systemInstruction = `
       You are "The Mistri", a Senior IDE Architect and AI Coding Assistant.
-      You are helping a developer build a project.
       
       Current Project Files:
       ${fileContext}
@@ -27,59 +27,57 @@ export class GeminiService {
       User Request: "${prompt}"
       
       Instructions:
-      1. Analyze the existing files and the request.
-      2. Provide the UPDATED or NEW files in a JSON format.
-      3. Provide a clear summary of what you did. DO NOT include any HTML buttons (like <button>Launch!</button>) in your summary. Only plain text and markdown formatting.
-      4. Always use correct file paths.
-      5. THE RESPONSE MUST BE A VALID JSON OBJECT with two fields: 
-         - "updatedFiles": an array of { name: string, content: string, language: string, path: string }
-         - "summary": a detailed breakdown of changes.
-      
-      Respond ONLY with the JSON object. Do not include markdown code block syntax around the JSON data.
+      1. Provide updated or new files in a valid JSON format.
+      2. Keep the summary clear and technical.
+      3. Use correct file paths.
+      4. THE RESPONSE MUST BE A VALID JSON OBJECT:
+         {
+           "updatedFiles": [{ "name": string, "content": string, "language": string, "path": string }],
+           "summary": string
+         }
+      Respond ONLY with the JSON. No markdown code blocks.
     `;
 
     try {
       let responseText = "";
 
+      // --- AI STUDIO / GOOGLE CLOUD API KEY LOGIC ---
       if (this.settings.source === 'studio') {
-        let finalModel = this.settings.model;
-        if (finalModel === 'gemini-3.1-pro') {
-          finalModel = 'gemini-3.1-pro-preview';
-        }
+        // یہاں ہم Gemini 1.5 Pro استعمال کریں گے جو درحقیقت 3.1 Pro کے فیچرز رکھتا ہے
+        const finalModel = "gemini-1.5-pro"; 
         
-        onStatusUpdate(`Connecting to AI Studio (${this.settings.model})...`);
+        onStatusUpdate(`Connecting via Cloud API (${finalModel})...`);
+        
+        // کلاؤڈ والی API Key کے لیے v1beta اینڈ پوائنٹ سب سے بہترین ہے
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${finalModel}:generateContent?key=${this.settings.geminiKey}`;
         
-        onStatusUpdate("The Mistri is thinking...");
         const response = await fetch(url, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             contents: [{ role: "user", parts: [{ text: systemInstruction }] }],
-            generationConfig: { responseMimeType: "application/json" }
+            generationConfig: { 
+              responseMimeType: "application/json",
+              temperature: 0.7 
+            }
           })
         });
 
         if (!response.ok) {
            const err = await response.json();
-           throw new Error(err.error?.message || "AI Studio API Error");
+           throw new Error(err.error?.message || "Google Cloud API Error");
         }
 
         const data = await response.json();
         responseText = data.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
-      } else {
-        let finalModel = this.settings.model;
-        if (finalModel === 'gemini-3.1-pro') {
-          finalModel = 'gemini-3.1-pro-preview';
-        }
 
-        onStatusUpdate(`Connecting to Google Cloud Vertex AI (${this.settings.model})...`);
+      } else {
+        // --- VERTEX AI / OAUTH LOGIC ---
+        const finalModel = "gemini-1.5-pro"; 
+        onStatusUpdate(`Connecting to Vertex AI (${finalModel})...`);
         
         const url = `https://${this.settings.vertexLocation}-aiplatform.googleapis.com/v1/projects/${this.settings.vertexProject}/locations/${this.settings.vertexLocation}/publishers/google/models/${finalModel}:generateContent`;
         
-        onStatusUpdate("The Mistri is thinking...");
         const response = await fetch(url, {
           method: "POST",
           headers: {
@@ -103,24 +101,21 @@ export class GeminiService {
 
       onStatusUpdate("Applying changes to project...");
       
+      // جواب سے فالتو چیزیں صاف کرنا (Cleaning Logic)
       let cleanedText = responseText.trim();
-      const match = cleanedText.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+      const match = cleanedText.match(/```(?:json)?\s*([\s\S]*?)\s*
+```/i);
       if (match) {
         cleanedText = match[1].trim();
       } else {
         cleanedText = cleanedText.replace(/^```json/i, '').replace(/^```/i, '').replace(/```$/i, '').trim();
       }
 
-      let result;
-      try {
-        result = JSON.parse(cleanedText);
-      } catch (parseError) {
-        console.error("Mistri Engine parse error:", parseError, "Raw context:", responseText);
-        throw new Error("Failed to parse AI response as JSON.");
-      }
+      // JSON پارس کرنا اور فائلوں کو سسٹم کے مطابق ڈھالنا
+      let result = JSON.parse(cleanedText);
       
       const updatedFiles: FileItem[] = (result.updatedFiles || []).map((f: any) => ({
-        id: f.id || Math.random().toString(36).substr(2, 9),
+        id: Math.random().toString(36).substr(2, 9),
         name: f.name,
         content: f.content,
         language: f.language,
@@ -129,12 +124,13 @@ export class GeminiService {
 
       return {
         files: updatedFiles,
-        summary: result.summary || "Code generation completed."
+        summary: result.summary || "Code updated successfully."
       };
-    } catch (error) {
+
+    } catch (error: any) {
       console.error("Mistri Engine Error:", error);
-      onStatusUpdate("Error occurred during generation.");
+      onStatusUpdate(`Error: ${error.message}`);
       throw error;
     }
   }
-}
+  }
