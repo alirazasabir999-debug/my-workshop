@@ -42,7 +42,7 @@ export class GeminiService {
     try {
       onStatusUpdate(`Gemini 3.1 Pro سے رابطہ ہو رہا ہے...`);
       
-      const workerUrl = "https://my-workshop-app.contact-indrvx.workers.dev/ai-generate"; 
+      const workerUrl = "https://alien-iota.vercel.app/api/generate"; 
 
       const response = await fetch(workerUrl, {
         method: "POST",
