@@ -14,16 +14,29 @@ export class GeminiService {
   ): Promise<{ files: FileItem[]; summary: string }> {
     onStatusUpdate("پراجیکٹ کا سٹرکچر انالائز کیا جا رہا ہے...");
     
-    // اگر پروجیکٹ خالی ہے تو بھی مستری کو بتانا ہے
     const fileContext = currentFiles.length > 0 
       ? currentFiles.map(f => `File: ${f.name}\nLanguage: ${f.language}\nContent:\n${f.content}`).join("\n\n---\n\n")
-      : "No existing files. Create everything from scratch.";
+      : "No existing files.";
     
     const systemInstruction = `
       You are "The Mistri", an expert Senior IDE Architect.
+      You MUST return ONLY a valid JSON object. Do not include markdown formatting or text outside JSON.
+      
       Current Project Files:\n${fileContext}\n
       User Task: "${prompt}"\n
-      Provide the complete, updated source code for the requested files. Do not truncate code.
+      
+      REQUIRED JSON STRUCTURE:
+      {
+        "updatedFiles": [
+          {
+            "name": "filename.js",
+            "content": "code here",
+            "language": "javascript",
+            "path": "path/if/needed"
+          }
+        ],
+        "summary": "Respond to the user naturally in Urdu. Explain what you did, or just reply to their greeting if they said Hi."
+      }
     `;
 
     try {
@@ -38,19 +51,27 @@ export class GeminiService {
       });
 
       if (!response.ok) {
-         throw new Error("ورکر کنکشن میں مسئلہ ہے۔");
+        const errData = await response.json();
+         throw new Error(errData.error || "ورکر کنکشن میں مسئلہ ہے۔");
       }
 
       const data = await response.json();
-      const responseText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      let responseText = data.candidates?.[0]?.content?.parts?.[0]?.text;
 
-      if (!responseText) {
-        throw new Error("اے آئی نے خالی جواب دیا ہے۔");
-      }
+      if (!responseText) throw new Error("اے آئی نے خالی جواب دیا ہے۔");
 
       onStatusUpdate("ڈیٹا ایکسٹریکٹ کیا جا رہا ہے...");
       
-      // اب سیدھا JSON Parse ہوگا کیونکہ بیک اینڈ نے گارنٹی دی ہے
+      // مارک ڈاؤن کلینر (یہ اب فیل نہیں ہوگا)
+      responseText = responseText.replace(/```json/gi, "").replace(/```/g, "").trim();
+      
+      const firstBrace = responseText.indexOf('{');
+      const lastBrace = responseText.lastIndexOf('}');
+      
+      if (firstBrace !== -1 && lastBrace !== -1) {
+        responseText = responseText.substring(firstBrace, lastBrace + 1);
+      }
+
       const result = JSON.parse(responseText);
       
       const updatedFiles: FileItem[] = (result.updatedFiles || []).map((f: any) => ({
